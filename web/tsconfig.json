@@ -14,7 +14,11 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@claude-run/api": ["../api/storage.ts"]
+    }
   },
-  "include": ["src"]
+  "include": [".", "../api/storage.ts"]
 }

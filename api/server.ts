@@ -4,11 +4,30 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import type { Server } from "http";
-import { ClaudeStorage } from "./storage.js";
-import { ClaudeWatcher } from "./watcher.js";
-import { join, dirname, basename } from "path";
+import {
+  initStorage,
+  loadStorage,
+  getClaudeDir,
+  getSessions,
+  getProjects,
+  getConversation,
+  getConversationStream,
+  invalidateHistoryCache,
+  addToFileIndex,
+} from "./storage.js";
+import {
+  initWatcher,
+  startWatcher,
+  stopWatcher,
+  onHistoryChange,
+  offHistoryChange,
+  onSessionChange,
+  offSessionChange,
+} from "./watcher.js";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync } from "fs";
+import open from "open";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,13 +36,14 @@ export interface ServerOptions {
   port: number;
   claudeDir?: string;
   dev?: boolean;
+  open?: boolean;
 }
 
 export function createServer(options: ServerOptions) {
-  const { port, claudeDir, dev = false } = options;
+  const { port, claudeDir, dev = false, open: shouldOpen = true } = options;
 
-  const storage = new ClaudeStorage(claudeDir);
-  const watcher = new ClaudeWatcher(storage.getClaudeDir());
+  initStorage(claudeDir);
+  initWatcher(getClaudeDir());
 
   const app = new Hono();
 
@@ -39,12 +59,12 @@ export function createServer(options: ServerOptions) {
   }
 
   app.get("/api/sessions", async (c) => {
-    const sessions = await storage.getSessions();
+    const sessions = await getSessions();
     return c.json(sessions);
   });
 
   app.get("/api/projects", async (c) => {
-    const projects = await storage.getProjects();
+    const projects = await getProjects();
     return c.json(projects);
   });
 
@@ -55,15 +75,15 @@ export function createServer(options: ServerOptions) {
 
       const cleanup = () => {
         isConnected = false;
-        watcher.off("historyChange", onHistoryChange);
+        offHistoryChange(handleHistoryChange);
       };
 
-      const onHistoryChange = async () => {
+      const handleHistoryChange = async () => {
         if (!isConnected) {
           return;
         }
         try {
-          const sessions = await storage.getSessions();
+          const sessions = await getSessions();
           const newOrUpdated = sessions.filter((s) => {
             const known = knownSessions.get(s.id);
             return known === undefined || known !== s.timestamp;
@@ -84,11 +104,11 @@ export function createServer(options: ServerOptions) {
         }
       };
 
-      watcher.on("historyChange", onHistoryChange);
+      onHistoryChange(handleHistoryChange);
       c.req.raw.signal.addEventListener("abort", cleanup);
 
       try {
-        const sessions = await storage.getSessions();
+        const sessions = await getSessions();
         for (const s of sessions) {
           knownSessions.set(s.id, s.timestamp);
         }
@@ -115,7 +135,7 @@ export function createServer(options: ServerOptions) {
 
   app.get("/api/conversation/:id", async (c) => {
     const sessionId = c.req.param("id");
-    const messages = await storage.getConversation(sessionId);
+    const messages = await getConversation(sessionId);
     return c.json(messages);
   });
 
@@ -129,16 +149,16 @@ export function createServer(options: ServerOptions) {
 
       const cleanup = () => {
         isConnected = false;
-        watcher.off("sessionChange", onSessionChange);
+        offSessionChange(handleSessionChange);
       };
 
-      const onSessionChange = async (changedSessionId: string) => {
+      const handleSessionChange = async (changedSessionId: string) => {
         if (changedSessionId !== sessionId || !isConnected) {
           return;
         }
 
         const { messages: newMessages, nextOffset: newOffset } =
-          await storage.getConversationStream(sessionId, offset);
+          await getConversationStream(sessionId, offset);
         offset = newOffset;
 
         if (newMessages.length > 0) {
@@ -153,11 +173,11 @@ export function createServer(options: ServerOptions) {
         }
       };
 
-      watcher.on("sessionChange", onSessionChange);
+      onSessionChange(handleSessionChange);
       c.req.raw.signal.addEventListener("abort", cleanup);
 
       try {
-        const { messages, nextOffset } = await storage.getConversationStream(
+        const { messages, nextOffset } = await getConversationStream(
           sessionId,
           offset
         );
@@ -183,7 +203,7 @@ export function createServer(options: ServerOptions) {
     });
   });
 
-  const webDistPath = join(__dirname, "..", "web-dist");
+  const webDistPath = join(__dirname, "web");
 
   app.use("/*", serveStatic({ root: webDistPath }));
 
@@ -197,26 +217,28 @@ export function createServer(options: ServerOptions) {
     }
   });
 
-  watcher.on("historyChange", () => {
-    storage.invalidateHistoryCache();
+  onHistoryChange(() => {
+    invalidateHistoryCache();
   });
 
-  watcher.on("sessionChange", (sessionId: string, filePath: string) => {
-    storage.addToFileIndex(sessionId, filePath);
+  onSessionChange((sessionId: string, filePath: string) => {
+    addToFileIndex(sessionId, filePath);
   });
 
-  watcher.start();
+  startWatcher();
 
   let httpServer: Server | null = null;
 
   return {
     app,
     port,
-    storage,
-    watcher,
     start: async () => {
-      await storage.init();
-      console.log(`\n  claude-run is running at http://localhost:${port}/\n`);
+      await loadStorage();
+      const url = `http://localhost:${port}/`;
+      console.log(`\n  claude-run is running at ${url}\n`);
+      if (shouldOpen) {
+        open(url);
+      }
       httpServer = serve({
         fetch: app.fetch,
         port,
@@ -224,7 +246,7 @@ export function createServer(options: ServerOptions) {
       return httpServer;
     },
     stop: () => {
-      watcher.stop();
+      stopWatcher();
       if (httpServer) {
         httpServer.close();
       }

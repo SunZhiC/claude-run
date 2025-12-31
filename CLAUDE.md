@@ -5,20 +5,17 @@ A web UI for browsing Claude Code conversation history stored in `~/.claude/`.
 ## Project Structure
 
 ```
-src/                   # Server source (Node.js + Hono)
+api/                   # Server source (Node.js + Hono)
   index.ts             # CLI entry point (Commander)
   server.ts            # Hono server with REST API
-  storage.ts           # Core logic for reading Claude data
+  storage.ts           # Core logic for reading Claude data + shared types
   watcher.ts           # File system watcher for real-time updates
 
-shared/                # Shared TypeScript types (workspace package)
-  src/types.ts         # Common interfaces (Session, Message, etc.)
-
-web/                   # React frontend (workspace package)
-  src/
-    app.tsx            # Main React app
-    utils.ts           # Utility functions
-    components/        # UI components
+web/                   # React frontend
+  app.tsx              # Main React app
+  main.tsx             # React entry point
+  utils.ts             # Utility functions
+  components/          # UI components
 ```
 
 ## How Claude Stores Data
@@ -63,11 +60,11 @@ pnpm build            # Build for production
 
 ## Publishing
 
-The root package is the publishable npm package. Running `npm publish` will:
-1. Build shared types, web frontend, and server
-2. Publish `dist/` (server) and `web-dist/` (frontend) to npm
+Running `npm publish` will:
+1. Build server to `dist/` and web frontend to `dist/web/`
+2. Publish `dist/` to npm
 
-Users can then run `npx claude-run` to start the app.
+Users can then run `npx claude-run` to start the app. The browser opens automatically (use `--no-open` to disable).
 
 ## API Endpoints
 

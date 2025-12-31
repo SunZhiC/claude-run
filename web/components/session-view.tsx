@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import type { ConversationMessage } from "@claude-run/shared";
+import type { ConversationMessage } from "@claude-run/api";
 import MessageBlock from "./message-block";
 
 interface SessionViewProps {

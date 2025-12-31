@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import type { Session } from "@claude-run/shared";
+import type { Session } from "@claude-run/api";
 import SessionList from "./components/session-list";
 import SessionView from "./components/session-view";
 import { useEventSource } from "./hooks/use-event-source";

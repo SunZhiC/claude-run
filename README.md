@@ -78,4 +78,4 @@ packages/
 
 ## License
 
-MIT
+MIT © Kamran Ahmed

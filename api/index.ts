@@ -33,18 +33,21 @@ program
     join(homedir(), ".claude")
   )
   .option("--dev", "Enable CORS for development")
+  .option("--no-open", "Do not open browser automatically")
   .parse();
 
 const opts = program.opts<{
   port: string;
   dir: string;
   dev: boolean;
+  open: boolean;
 }>();
 
 const server = createServer({
   port: parseInt(opts.port, 10),
   claudeDir: opts.dir,
   dev: opts.dev,
+  open: opts.open,
 });
 
 process.on("SIGINT", () => {
