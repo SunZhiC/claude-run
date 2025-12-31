@@ -1,16 +1,22 @@
-# Claude Run
+# claude-run
 
 A beautiful web UI for browsing Claude Code conversation history.
-
-## Quick Start
 
 ```bash
 npx claude-run
 ```
 
-The browser will open automatically at http://localhost:12001.
+The browser will open automatically at [localhost:12001](http://localhost:12001) with the UI showing claude sessions history.
 
 ## Installation
+
+You can either run it without installation
+
+```bash
+npx claude-run
+```
+
+on install it globally
 
 ```bash
 npm install -g claude-run
