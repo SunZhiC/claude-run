@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, open } from "fs/promises";
+import { readdir, readFile, writeFile, stat, open } from "fs/promises";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
@@ -310,6 +310,38 @@ export async function getConversation(
 
     return messages;
   });
+}
+
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  const historyPath = join(claudeDir, "history.jsonl");
+
+  try {
+    const content = await readFile(historyPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    const filteredLines: string[] = [];
+
+    for (const line of lines) {
+      try {
+        const entry: HistoryEntry = JSON.parse(line);
+        if (entry.sessionId === sessionId) {
+          continue;
+        }
+        filteredLines.push(line);
+      } catch {
+        filteredLines.push(line);
+      }
+    }
+
+    if (filteredLines.length === lines.length) {
+      return false;
+    }
+
+    await writeFile(historyPath, filteredLines.join("\n") + "\n", "utf-8");
+    historyCache = null;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getConversationStream(

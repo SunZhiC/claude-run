@@ -12,6 +12,7 @@ import {
   getProjects,
   getConversation,
   getConversationStream,
+  deleteSession,
   invalidateHistoryCache,
   addToFileIndex,
 } from "./storage";
@@ -28,6 +29,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import open from "open";
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -60,7 +62,7 @@ export function createServer(options: ServerOptions) {
       "*",
       cors({
         origin: ["http://localhost:12000"],
-        allowMethods: ["GET", "POST", "OPTIONS"],
+        allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
         allowHeaders: ["Content-Type"],
       }),
     );
@@ -69,6 +71,15 @@ export function createServer(options: ServerOptions) {
   app.get("/api/sessions", async (c) => {
     const sessions = await getSessions();
     return c.json(sessions);
+  });
+
+  app.delete("/api/sessions/:id", async (c) => {
+    const sessionId = c.req.param("id");
+    const deleted = await deleteSession(sessionId);
+    if (deleted) {
+      return c.json({ success: true });
+    }
+    return c.json({ error: "Session not found" }, 404);
   });
 
   app.get("/api/projects", async (c) => {
@@ -210,6 +221,7 @@ export function createServer(options: ServerOptions) {
       }
     });
   });
+
 
   const webDistPath = getWebDistPath();
 

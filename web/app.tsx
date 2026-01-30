@@ -6,6 +6,7 @@ import SessionList from "./components/session-list";
 import SessionView from "./components/session-view";
 import { useEventSource } from "./hooks/use-event-source";
 
+
 interface SessionHeaderProps {
   session: Session;
   copied: boolean;
@@ -28,23 +29,25 @@ function SessionHeader(props: SessionHeaderProps) {
           {formatTime(session.timestamp)}
         </span>
       </div>
-      <button
-        onClick={() => onCopyResumeCommand(session.id, session.project)}
-        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors cursor-pointer shrink-0"
-        title="Copy resume command to clipboard"
-      >
-        {copied ? (
-          <>
-            <Check className="w-3.5 h-3.5 text-green-500" />
-            <span className="text-green-500">Copied!</span>
-          </>
-        ) : (
-          <>
-            <Copy className="w-3.5 h-3.5" />
-            <span>Copy Resume Command</span>
-          </>
-        )}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onCopyResumeCommand(session.id, session.project)}
+          className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded transition-colors cursor-pointer shrink-0"
+          title="Copy resume command to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-green-500" />
+              <span className="text-green-500">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy Resume Command</span>
+            </>
+          )}
+        </button>
+      </div>
     </>
   );
 }
@@ -126,6 +129,25 @@ function App() {
     setSelectedSession(sessionId);
   }, []);
 
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+          if (selectedSession === sessionId) {
+            setSelectedSession(null);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to delete session:", err);
+      }
+    },
+    [selectedSession],
+  );
+
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100">
       {!sidebarCollapsed && (
@@ -154,6 +176,7 @@ function App() {
             sessions={filteredSessions}
             selectedSession={selectedSession}
             onSelectSession={handleSelectSession}
+            onDeleteSession={handleDeleteSession}
             loading={loading}
           />
         </aside>
@@ -179,8 +202,8 @@ function App() {
           )}
         </div>
         <div className="flex-1 overflow-hidden">
-          {selectedSession ? (
-            <SessionView sessionId={selectedSession} />
+          {selectedSession && selectedSessionData ? (
+            <SessionView sessionId={selectedSession} session={selectedSessionData} />
           ) : (
             <div className="flex h-full items-center justify-center text-zinc-600">
               <div className="text-center">
