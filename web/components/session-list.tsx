@@ -315,7 +315,7 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                     </span>
                     {onDeleteSession ? (
                       <>
-                        <span className="text-[10px] text-zinc-600 group-hover:hidden">
+                        <span className="text-[10px] text-zinc-600 group-hover:invisible h-4 flex items-center">
                           {formatTime(session.timestamp)}
                         </span>
                         <button
@@ -325,7 +325,7 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                               onDeleteSession(session.id);
                             }
                           }}
-                          className="hidden group-hover:flex items-center justify-center p-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-700/80 transition-colors"
+                          className="hidden group-hover:flex items-center justify-center h-4 w-4 -mr-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-700/80 transition-colors"
                           title="Delete session"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
