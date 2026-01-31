@@ -16,6 +16,7 @@ export interface Session {
   timestamp: number;
   project: string;
   projectName: string;
+  messageCount: number;
 }
 
 export interface ConversationMessage {
@@ -242,6 +243,33 @@ async function findSessionFile(sessionId: string): Promise<string | null> {
   return null;
 }
 
+async function countSessionMessages(sessionId: string): Promise<number> {
+  const filePath = await findSessionFile(sessionId);
+  if (!filePath) {
+    return 0;
+  }
+
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+
+    let count = 0;
+    for (const line of lines) {
+      try {
+        const msg: ConversationMessage = JSON.parse(line);
+        if (msg.type === "user" || msg.type === "assistant") {
+          count++;
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    }
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
 export async function loadStorage(): Promise<void> {
   await Promise.all([buildFileIndex(), loadHistoryCache()]);
 }
@@ -264,12 +292,14 @@ export async function getSessions(): Promise<Session[]> {
       }
 
       seenIds.add(sessionId);
+      const messageCount = await countSessionMessages(sessionId);
       sessions.push({
         id: sessionId,
         display: entry.display,
         timestamp: entry.timestamp,
         project: entry.project,
         projectName: getProjectName(entry.project),
+        messageCount,
       });
     }
 

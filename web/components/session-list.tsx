@@ -315,8 +315,10 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                     </span>
                     {onDeleteSession ? (
                       <>
-                        <span className="text-[10px] text-zinc-600 group-hover:invisible h-4 flex items-center">
-                          {formatTime(session.timestamp)}
+                        <span className="text-[10px] text-zinc-600 group-hover:invisible h-4 flex items-center gap-1">
+                          <span>{formatTime(session.timestamp)}</span>
+                          <span>·</span>
+                          <span>{session.messageCount} msgs</span>
                         </span>
                         <button
                           onClick={(e) => {
@@ -334,8 +336,10 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                         </button>
                       </>
                     ) : (
-                      <span className="text-[10px] text-zinc-600">
-                        {formatTime(session.timestamp)}
+                      <span className="text-[10px] text-zinc-600 h-4 flex items-center gap-1">
+                        <span>{formatTime(session.timestamp)}</span>
+                        <span>·</span>
+                        <span>{session.messageCount} msgs</span>
                       </span>
                     )}
                   </div>
