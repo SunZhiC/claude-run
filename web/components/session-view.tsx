@@ -1,8 +1,56 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import type { ConversationMessage, Session, SubagentInfo } from "@claude-run/api";
+import type { ConversationMessage, Session, SubagentInfo, SessionTokenUsage } from "@claude-run/api";
 import MessageBlock from "./message-block";
 import ScrollToBottomButton from "./scroll-to-bottom-button";
 import { MarkdownExportButton } from "./markdown-export";
+
+const TOKEN_PRICES: { key: keyof SessionTokenUsage; label: string; price: number }[] = [
+  { key: "input_tokens", label: "Base Input", price: 5 },
+  { key: "cache_write_5m_tokens", label: "5m Cache Write", price: 6.25 },
+  { key: "cache_write_1h_tokens", label: "1h Cache Write", price: 10 },
+  { key: "cache_read_tokens", label: "Cache Read", price: 0.5 },
+  { key: "output_tokens", label: "Output", price: 25 },
+];
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
+  return n.toString();
+}
+
+function tokenCost(tokens: number, pricePerMTok: number): number {
+  return (tokens / 1_000_000) * pricePerMTok;
+}
+
+function TokenUsageBar({ usage }: { usage: SessionTokenUsage }) {
+  const items = TOKEN_PRICES.map(({ key, label, price }) => {
+    const count = usage[key];
+    const cost = tokenCost(count, price);
+    return { label, count, cost, price };
+  });
+  const totalCost = items.reduce((sum, i) => sum + i.cost, 0);
+
+  return (
+    <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Token Usage</h3>
+        <span className="text-sm font-medium text-amber-400">${totalCost.toFixed(4)}</span>
+      </div>
+      <div className="grid grid-cols-5 gap-3">
+        {items.map(({ label, count, cost, price }) => (
+          <div key={label} className="text-center">
+            <div className="text-[11px] text-zinc-500 mb-1">{label}</div>
+            <div className="text-sm text-zinc-200 font-mono">{formatTokenCount(count)}</div>
+            <div className="text-[11px] text-zinc-500 mt-0.5">
+              ${cost.toFixed(4)}
+            </div>
+            <div className="text-[10px] text-zinc-600">${price}/MTok</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const MAX_RETRIES = 10;
 const BASE_RETRY_DELAY_MS = 1000;
@@ -21,6 +69,7 @@ function SessionView(props: SessionViewProps) {
   const [loading, setLoading] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   const [subagentMap, setSubagentMap] = useState<Map<string, string>>(new Map());
+  const [tokenUsage, setTokenUsage] = useState<SessionTokenUsage | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
@@ -80,8 +129,16 @@ function SessionView(props: SessionViewProps) {
     setLoading(true);
     setMessages([]);
     setSubagentMap(new Map());
+    setTokenUsage(null);
     offsetRef.current = 0;
     retryCountRef.current = 0;
+
+    fetch(`/api/conversation/${sessionId}/usage`)
+      .then((r) => r.json())
+      .then((data: SessionTokenUsage) => {
+        if (mountedRef.current) setTokenUsage(data);
+      })
+      .catch(() => {});
 
     fetch(`/api/conversation/${sessionId}/subagents`)
       .then((r) => r.json())
@@ -157,7 +214,7 @@ function SessionView(props: SessionViewProps) {
         className="h-full overflow-y-auto bg-zinc-950"
       >
         <div className="mx-auto max-w-3xl px-4 py-4">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             {summary ? (
               <div className="flex-1 rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4">
                 <h2 className="text-sm font-medium text-zinc-200 leading-relaxed">
@@ -174,6 +231,11 @@ function SessionView(props: SessionViewProps) {
               <MarkdownExportButton session={session} messages={messages} />
             </div>
           </div>
+          {tokenUsage && (
+            <div className="mb-6">
+              <TokenUsageBar usage={tokenUsage} />
+            </div>
+          )}
 
           <div className="flex flex-col gap-2">
             {conversationMessages.map((message, index) => (

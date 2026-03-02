@@ -14,7 +14,9 @@ import {
   getConversationStream,
   getSubagentMap,
   getSubagentConversation,
+  getSessionTokenUsage,
   deleteSession,
+  renameSession,
   searchConversations,
   invalidateHistoryCache,
   addToFileIndex,
@@ -83,6 +85,29 @@ export function createServer(options: ServerOptions) {
       return c.json({ success: true });
     }
     return c.json({ error: "Session not found" }, 404);
+  });
+
+  app.post("/api/sessions/:id/rename", async (c) => {
+    const sessionId = c.req.param("id");
+    try {
+      const body = await c.req.json<{ name: string }>();
+      const name = body?.name?.trim() ?? "";
+
+      if (!name) {
+        return c.json({ error: "Name cannot be empty" }, 400);
+      }
+      if (name.length > 200) {
+        return c.json({ error: "Name too long (max 200 characters)" }, 400);
+      }
+
+      const success = await renameSession(sessionId, name);
+      if (success) {
+        return c.json({ success: true });
+      }
+      return c.json({ error: "Session not found" }, 404);
+    } catch {
+      return c.json({ error: "Invalid request body" }, 400);
+    }
   });
 
   app.get("/api/projects", async (c) => {
@@ -172,6 +197,12 @@ export function createServer(options: ServerOptions) {
     const agentId = c.req.param("agentId");
     const messages = await getSubagentConversation(sessionId, agentId);
     return c.json(messages);
+  });
+
+  app.get("/api/conversation/:id/usage", async (c) => {
+    const sessionId = c.req.param("id");
+    const usage = await getSessionTokenUsage(sessionId);
+    return c.json(usage);
   });
 
   app.get("/api/conversation/:id/stream", async (c) => {

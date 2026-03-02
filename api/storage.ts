@@ -17,6 +17,7 @@ export interface Session {
   project: string;
   projectName: string;
   messageCount: number;
+  model?: string;
 }
 
 export interface ConversationMessage {
@@ -51,6 +52,18 @@ export interface TokenUsage {
   output_tokens: number;
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  cache_creation?: {
+    ephemeral_5m_input_tokens?: number;
+    ephemeral_1h_input_tokens?: number;
+  };
+}
+
+export interface SessionTokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_write_5m_tokens: number;
+  cache_write_1h_tokens: number;
+  cache_read_tokens: number;
 }
 
 export interface SubagentInfo {
@@ -248,10 +261,10 @@ async function findSessionFile(sessionId: string): Promise<string | null> {
   return null;
 }
 
-async function countSessionMessages(sessionId: string): Promise<number> {
+async function countSessionMessages(sessionId: string): Promise<{ count: number; model?: string }> {
   const filePath = await findSessionFile(sessionId);
   if (!filePath) {
-    return 0;
+    return { count: 0 };
   }
 
   try {
@@ -259,19 +272,23 @@ async function countSessionMessages(sessionId: string): Promise<number> {
     const lines = content.trim().split("\n").filter(Boolean);
 
     let count = 0;
+    let model: string | undefined;
     for (const line of lines) {
       try {
         const msg: ConversationMessage = JSON.parse(line);
         if (msg.type === "user" || msg.type === "assistant") {
           count++;
+          if (!model && msg.type === "assistant" && msg.message?.model) {
+            model = msg.message.model;
+          }
         }
       } catch {
         // Skip malformed lines
       }
     }
-    return count;
+    return { count, model };
   } catch {
-    return 0;
+    return { count: 0 };
   }
 }
 
@@ -297,7 +314,7 @@ export async function getSessions(): Promise<Session[]> {
       }
 
       seenIds.add(sessionId);
-      const messageCount = await countSessionMessages(sessionId);
+      const { count: messageCount, model } = await countSessionMessages(sessionId);
       sessions.push({
         id: sessionId,
         display: entry.display,
@@ -305,6 +322,7 @@ export async function getSessions(): Promise<Session[]> {
         project: entry.project,
         projectName: getProjectName(entry.project),
         messageCount,
+        model,
       });
     }
 
@@ -361,6 +379,52 @@ export async function getConversation(
   });
 }
 
+export async function getSessionTokenUsage(
+  sessionId: string
+): Promise<SessionTokenUsage> {
+  const usage: SessionTokenUsage = {
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_write_5m_tokens: 0,
+    cache_write_1h_tokens: 0,
+    cache_read_tokens: 0,
+  };
+
+  const filePath = await findSessionFile(sessionId);
+  if (!filePath) return usage;
+
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+
+    for (const line of lines) {
+      try {
+        const msg = JSON.parse(line);
+        const u = msg?.message?.usage;
+        if (msg.type !== "assistant" || !u) continue;
+
+        usage.input_tokens += u.input_tokens ?? 0;
+        usage.output_tokens += u.output_tokens ?? 0;
+        usage.cache_read_tokens += u.cache_read_input_tokens ?? 0;
+
+        if (u.cache_creation) {
+          usage.cache_write_5m_tokens += u.cache_creation.ephemeral_5m_input_tokens ?? 0;
+          usage.cache_write_1h_tokens += u.cache_creation.ephemeral_1h_input_tokens ?? 0;
+        } else if (u.cache_creation_input_tokens) {
+          // Fallback: older format without cache_creation breakdown
+          usage.cache_write_1h_tokens += u.cache_creation_input_tokens;
+        }
+      } catch {
+        // skip
+      }
+    }
+  } catch {
+    // file not readable
+  }
+
+  return usage;
+}
+
 export async function deleteSession(sessionId: string): Promise<boolean> {
   const historyPath = join(claudeDir, "history.jsonl");
 
@@ -389,6 +453,62 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     historyCache = null;
     return true;
   } catch {
+    return false;
+  }
+}
+
+export async function renameSession(
+  sessionId: string,
+  newName: string
+): Promise<boolean> {
+  const historyPath = join(claudeDir, "history.jsonl");
+
+  // Validate input
+  const trimmedName = newName.trim();
+  if (!trimmedName || trimmedName.length > 200) {
+    return false;
+  }
+
+  try {
+    const content = await readFile(historyPath, "utf-8");
+    const lines = content.split("\n").filter(Boolean);
+    const updatedLines: string[] = [];
+    let found = false;
+
+    for (const line of lines) {
+      try {
+        const entry: HistoryEntry = JSON.parse(line);
+        // Match by sessionId if available, otherwise skip (old format without sessionId)
+        if (entry.sessionId === sessionId) {
+          entry.display = trimmedName;
+          updatedLines.push(JSON.stringify(entry));
+          found = true;
+        } else {
+          updatedLines.push(line);
+        }
+      } catch {
+        // Keep malformed lines as-is
+        updatedLines.push(line);
+      }
+    }
+
+    if (!found) {
+      return false;
+    }
+
+    // Atomic write: write to temp file then rename
+    const tempPath = historyPath + ".tmp";
+    await writeFile(tempPath, updatedLines.join("\n") + "\n", "utf-8");
+
+    // Rename temp file to original (atomic on most filesystems)
+    const { rename } = await import("fs/promises");
+    await rename(tempPath, historyPath);
+
+    // Invalidate cache to force reload
+    historyCache = null;
+    return true;
+  } catch (err) {
+    console.error("Error renaming session:", err);
     return false;
   }
 }
