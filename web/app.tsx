@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { Session } from "@claude-run/api";
-import { PanelLeft, Copy, Check } from "lucide-react";
+import { PanelLeft, Copy, Check, Pencil, X, Loader2 } from "lucide-react";
 import { formatTime } from "./utils";
 import SessionList from "./components/session-list";
 import SessionView from "./components/session-view";
@@ -11,23 +11,133 @@ interface SessionHeaderProps {
   session: Session;
   copied: boolean;
   onCopyResumeCommand: (sessionId: string, projectPath: string) => void;
+  onRenameSession?: (sessionId: string, newName: string) => Promise<boolean>;
 }
 
 function SessionHeader(props: SessionHeaderProps) {
-  const { session, copied, onCopyResumeCommand } = props;
+  const { session, copied, onCopyResumeCommand, onRenameSession } = props;
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState(session.display);
+  const [isSaving, setIsSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset edit value when session changes
+  useEffect(() => {
+    setEditValue(session.display);
+    setIsEditing(false);
+  }, [session.id, session.display]);
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  const handleStartEdit = useCallback(() => {
+    setEditValue(session.display);
+    setIsEditing(true);
+  }, [session.display]);
+
+  const handleCancel = useCallback(() => {
+    setIsEditing(false);
+    setEditValue(session.display);
+  }, [session.display]);
+
+  const handleSave = useCallback(async () => {
+    const trimmed = editValue.trim();
+    if (!trimmed || trimmed === session.display) {
+      setIsEditing(false);
+      setEditValue(session.display);
+      return;
+    }
+
+    if (!onRenameSession) {
+      setIsEditing(false);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const success = await onRenameSession(session.id, trimmed);
+      if (success) {
+        setIsEditing(false);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  }, [editValue, session.display, session.id, onRenameSession]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSave();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        handleCancel();
+      }
+    },
+    [handleSave, handleCancel]
+  );
 
   return (
     <>
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <span className="text-sm text-zinc-300 truncate max-w-xs">
-          {session.display}
-        </span>
-        <span className="text-xs text-zinc-600 shrink-0">
-          {session.projectName}
-        </span>
-        <span className="text-xs text-zinc-600 shrink-0">
-          {formatTime(session.timestamp)}
-        </span>
+        {isEditing ? (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isSaving}
+              className="flex-1 min-w-0 px-2 py-1 text-sm bg-zinc-900 border border-zinc-700 rounded text-zinc-100 focus:outline-none focus:border-zinc-500 disabled:opacity-50"
+              placeholder="Session name"
+            />
+            <button
+              onClick={handleSave}
+              disabled={isSaving || !editValue.trim()}
+              className="p-1 hover:bg-zinc-800 rounded transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Save (Enter)"
+            >
+              {isSaving ? (
+                <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+              ) : (
+                <Check className="w-4 h-4 text-green-500" />
+              )}
+            </button>
+            <button
+              onClick={handleCancel}
+              disabled={isSaving}
+              className="p-1 hover:bg-zinc-800 rounded transition-colors cursor-pointer disabled:opacity-50"
+              title="Cancel (Escape)"
+            >
+              <X className="w-4 h-4 text-zinc-400" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={handleStartEdit}
+              className="group flex items-center gap-2 min-w-0"
+              title="Click to rename"
+            >
+              <span className="text-sm text-zinc-300 truncate max-w-xs group-hover:text-zinc-200">
+                {session.display}
+              </span>
+              <Pencil className="w-3 h-3 text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
+            <span className="text-xs text-zinc-600 shrink-0">
+              {session.projectName}
+            </span>
+            <span className="text-xs text-zinc-600 shrink-0">
+              {formatTime(session.timestamp)}
+            </span>
+          </>
+        )}
       </div>
       <div className="flex items-center gap-2">
         <button
@@ -70,6 +180,33 @@ function App() {
       });
     },
     [],
+  );
+
+  const handleRenameSession = useCallback(
+    async (sessionId: string, newName: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}/rename`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (res.ok) {
+          // Update local state immediately for better UX
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === sessionId ? { ...s, display: newName } : s
+            )
+          );
+          return true;
+        }
+        console.error("Failed to rename session:", await res.text());
+        return false;
+      } catch (err) {
+        console.error("Error renaming session:", err);
+        return false;
+      }
+    },
+    []
   );
 
   const selectedSessionData = useMemo(() => {
@@ -198,6 +335,7 @@ function App() {
               session={selectedSessionData}
               copied={copied}
               onCopyResumeCommand={handleCopyResumeCommand}
+              onRenameSession={handleRenameSession}
             />
           )}
         </div>

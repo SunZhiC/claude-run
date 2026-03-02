@@ -1,7 +1,7 @@
 import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Session, SearchResult } from "@claude-run/api";
-import { formatTime } from "../utils";
+import { formatTime, getProviderInfo } from "../utils";
 
 interface SessionListProps {
   sessions: Session[];
@@ -290,6 +290,7 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
               }
 
               const session = filteredSessions[virtualItem.index];
+              const provider = getProviderInfo(session.model);
               return (
                 <div
                   key={session.id}
@@ -310,8 +311,13 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                   onClick={() => onSelectSession(session.id)}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] text-zinc-500 font-medium">
+                    <span className="text-[10px] text-zinc-500 font-medium flex items-center gap-1.5">
                       {session.projectName}
+                      {provider && (
+                        <span className={`px-1 py-px rounded text-[9px] font-medium border ${provider.color}`}>
+                          {provider.label}
+                        </span>
+                      )}
                     </span>
                     {onDeleteSession ? (
                       <>

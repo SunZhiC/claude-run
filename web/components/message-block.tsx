@@ -19,7 +19,7 @@ import {
   HardDrive,
   Bot,
 } from "lucide-react";
-import { sanitizeText } from "../utils";
+import { sanitizeText, getProviderInfo } from "../utils";
 import { MarkdownRenderer } from "./markdown-renderer";
 import {
   TodoRenderer,
@@ -57,6 +57,8 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
 
   const isUser = message.type === "user";
   const content = message.message?.content;
+  const model = message.message?.model;
+  const provider = !isUser ? getProviderInfo(model) : null;
 
   const getTextBlocks = (): ContentBlock[] => {
     if (!content || typeof content === "string") {
@@ -101,6 +103,11 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
         {toolBlocks.map((block, index) => (
           <ContentBlockRenderer key={index} block={block} toolMap={toolMap} sessionId={sessionId} subagentMap={subagentMap} />
         ))}
+        {provider && (
+          <span className={`text-[9px] ${provider.color} px-1 py-px rounded border w-fit`}>
+            {model}
+          </span>
+        )}
       </div>
     );
   }
@@ -141,6 +148,14 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
             {toolBlocks.map((block, index) => (
               <ContentBlockRenderer key={index} block={block} toolMap={toolMap} sessionId={sessionId} subagentMap={subagentMap} />
             ))}
+          </div>
+        )}
+
+        {provider && (
+          <div className="mt-1">
+            <span className={`text-[9px] ${provider.color} px-1 py-px rounded border`}>
+              {model}
+            </span>
           </div>
         )}
       </div>
