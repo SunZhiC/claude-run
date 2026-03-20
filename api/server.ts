@@ -19,6 +19,7 @@ import {
   renameSession,
   searchConversations,
   invalidateHistoryCache,
+  invalidateSessionMeta,
   addToFileIndex,
 } from "./storage";
 import {
@@ -301,6 +302,7 @@ export function createServer(options: ServerOptions) {
 
   onSessionChange((sessionId: string, filePath: string) => {
     addToFileIndex(sessionId, filePath);
+    invalidateSessionMeta(sessionId);
   });
 
   startWatcher();

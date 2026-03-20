@@ -93,6 +93,7 @@ export interface SearchResult {
 let claudeDir = join(homedir(), ".claude");
 let projectsDir = join(claudeDir, "projects");
 const fileIndex = new Map<string, string>();
+const sessionMetaCache = new Map<string, { count: number; model?: string }>();
 let historyCache: HistoryEntry[] | null = null;
 const pendingRequests = new Map<string, Promise<unknown>>();
 
@@ -111,6 +112,10 @@ export function invalidateHistoryCache(): void {
 
 export function addToFileIndex(sessionId: string, filePath: string): void {
   fileIndex.set(sessionId, filePath);
+}
+
+export function invalidateSessionMeta(sessionId: string): void {
+  sessionMetaCache.delete(sessionId);
 }
 
 function encodeProjectPath(path: string): string {
@@ -262,6 +267,9 @@ async function findSessionFile(sessionId: string): Promise<string | null> {
 }
 
 async function countSessionMessages(sessionId: string): Promise<{ count: number; model?: string }> {
+  const cached = sessionMetaCache.get(sessionId);
+  if (cached) return cached;
+
   const filePath = await findSessionFile(sessionId);
   if (!filePath) {
     return { count: 0 };
@@ -286,7 +294,9 @@ async function countSessionMessages(sessionId: string): Promise<{ count: number;
         // Skip malformed lines
       }
     }
-    return { count, model };
+    const result = { count, model };
+    sessionMetaCache.set(sessionId, result);
+    return result;
   } catch {
     return { count: 0 };
   }
@@ -299,9 +309,10 @@ export async function loadStorage(): Promise<void> {
 export async function getSessions(): Promise<Session[]> {
   return dedupe("getSessions", async () => {
     const entries = historyCache ?? (await loadHistoryCache());
-    const sessions: Session[] = [];
     const seenIds = new Set<string>();
 
+    // Phase 1: resolve sessionIds and deduplicate
+    const resolvedEntries: { sessionId: string; entry: HistoryEntry }[] = [];
     for (const entry of entries) {
       let sessionId = entry.sessionId;
       if (!sessionId) {
@@ -314,17 +325,24 @@ export async function getSessions(): Promise<Session[]> {
       }
 
       seenIds.add(sessionId);
-      const { count: messageCount, model } = await countSessionMessages(sessionId);
-      sessions.push({
-        id: sessionId,
-        display: entry.display,
-        timestamp: entry.timestamp,
-        project: entry.project,
-        projectName: getProjectName(entry.project),
-        messageCount,
-        model,
-      });
+      resolvedEntries.push({ sessionId, entry });
     }
+
+    // Phase 2: count messages in parallel
+    const sessions = await Promise.all(
+      resolvedEntries.map(async ({ sessionId, entry }) => {
+        const { count: messageCount, model } = await countSessionMessages(sessionId);
+        return {
+          id: sessionId,
+          display: entry.display,
+          timestamp: entry.timestamp,
+          project: entry.project,
+          projectName: getProjectName(entry.project),
+          messageCount,
+          model,
+        };
+      })
+    );
 
     return sessions.sort((a, b) => b.timestamp - a.timestamp);
   });
