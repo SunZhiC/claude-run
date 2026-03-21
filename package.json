@@ -4,9 +4,7 @@
   "description": "A multi-provider web UI for browsing AI coding session history",
   "type": "module",
   "bin": {
-    "agents-run": "./dist/index.js",
-    "agent-run": "./dist/index.js",
-    "claude-run": "./dist/index.js"
+    "agents-run": "./dist/index.js"
   },
   "main": "./dist/index.js",
   "files": [
@@ -19,6 +17,7 @@
     "build": "pnpm build:server && pnpm build:web",
     "build:web": "vite build --config web/vite.config.ts",
     "build:server": "tsup api/index.ts --format esm --dts --clean",
+    "demo:gif": "pnpm build && node scripts/generate-readme-demo.mjs",
     "start": "node dist/index.js",
     "test": "vitest run",
     "prepublishOnly": "pnpm build"
@@ -46,6 +45,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.2",
+    "playwright": "^1.58.2",
     "prettier": "^3.7.4",
     "tailwindcss": "^4.0.7",
     "tsup": "^8.3.5",

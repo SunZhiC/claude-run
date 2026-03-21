@@ -7,7 +7,9 @@ Browse AI coding session history from multiple tools in a unified web UI
 [![npm version](https://img.shields.io/npm/v/agents-run.svg)](https://www.npmjs.com/package/agents-run)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-<img src=".github/claude-run.gif" alt="Agents Run Demo" width="800" />
+<img src=".github/agents-run.gif" alt="Agents Run Demo" width="800" />
+
+<sub>The README demo is generated from synthetic sessions, not from local history.</sub>
 
 </div>
 
@@ -54,13 +56,6 @@ agents-run
 ```
 
 The browser will open automatically at http://localhost:12001, showing your AI coding sessions across supported providers.
-
-Legacy command alias:
-
-```bash
-agent-run
-claude-run
-```
 
 ```bash
 agents-run [options]
@@ -113,6 +108,9 @@ pnpm dev
 
 # Build for production
 pnpm build
+
+# Refresh the README demo GIF with synthetic data
+pnpm demo:gif
 ```
 
 ## License

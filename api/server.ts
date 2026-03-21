@@ -30,6 +30,7 @@ import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import open from "open";
 import type { Session } from "./storage";
+import { demoManager } from "./demo-data";
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +53,8 @@ export interface ServerOptions {
 
 export function createServer(options: ServerOptions) {
   const { port, claudeDir, dev = false, open: shouldOpen = true } = options;
+  const isDemo = process.env.AGENTS_RUN_DEMO === "1";
+  const dataSource = isDemo ? demoManager : providerManager;
 
   const app = new Hono();
 
@@ -69,8 +72,8 @@ export function createServer(options: ServerOptions) {
   // === API Routes ===
 
   app.get("/api/providers", async (c) => {
-    const providers = providerManager.getAvailableProviders();
-    const sessions = await providerManager.getSessions();
+    const providers = dataSource.getAvailableProviders();
+    const sessions = await dataSource.getSessions();
 
     const result = providers.map((name) => ({
       name,
@@ -82,13 +85,16 @@ export function createServer(options: ServerOptions) {
 
   app.get("/api/sessions", async (c) => {
     const provider = c.req.query("provider") as ProviderName | undefined;
-    const sessions = await providerManager.getSessions(provider);
+    const sessions = await dataSource.getSessions(provider);
     return c.json(sessions);
   });
 
   app.delete("/api/sessions/:id", async (c) => {
+    if (isDemo) {
+      return c.json({ error: "Delete not supported in demo mode" }, 400);
+    }
     const sessionId = c.req.param("id");
-    const sessionProvider = providerManager.getProviderForSession(sessionId);
+    const sessionProvider = dataSource.getProviderForSession(sessionId);
     if (sessionProvider && sessionProvider !== "claude") {
       return c.json({ error: "Delete not supported for this provider" }, 400);
     }
@@ -100,8 +106,11 @@ export function createServer(options: ServerOptions) {
   });
 
   app.post("/api/sessions/:id/rename", async (c) => {
+    if (isDemo) {
+      return c.json({ error: "Rename not supported in demo mode" }, 400);
+    }
     const sessionId = c.req.param("id");
-    const sessionProvider = providerManager.getProviderForSession(sessionId);
+    const sessionProvider = dataSource.getProviderForSession(sessionId);
     if (sessionProvider && sessionProvider !== "claude") {
       return c.json({ error: "Rename not supported for this provider" }, 400);
     }
@@ -127,12 +136,43 @@ export function createServer(options: ServerOptions) {
   });
 
   app.get("/api/projects", async (c) => {
-    const projects = await providerManager.getProjects();
+    const projects = await dataSource.getProjects();
     return c.json(projects);
   });
 
   app.get("/api/sessions/stream", async (c) => {
     const provider = c.req.query("provider") as ProviderName | undefined;
+
+    if (isDemo) {
+      return streamSSE(c, async (stream) => {
+        let isConnected = true;
+        const cleanup = () => {
+          isConnected = false;
+        };
+
+        c.req.raw.signal.addEventListener("abort", cleanup);
+
+        try {
+          const sessions = await dataSource.getSessions(provider);
+          await stream.writeSSE({
+            event: "sessions",
+            data: JSON.stringify(sessions),
+          });
+
+          while (isConnected) {
+            await stream.writeSSE({
+              event: "heartbeat",
+              data: JSON.stringify({ timestamp: Date.now() }),
+            });
+            await stream.sleep(30000);
+          }
+        } catch {
+          // Connection closed
+        } finally {
+          cleanup();
+        }
+      });
+    }
 
     return streamSSE(c, async (stream) => {
       let isConnected = true;
@@ -161,7 +201,7 @@ export function createServer(options: ServerOptions) {
           return;
         }
         try {
-          const sessions = await providerManager.getSessions(provider);
+          const sessions = await dataSource.getSessions(provider);
           const nextKnownSessions = new Map<string, string>();
           const newOrUpdated = sessions.filter((s) => {
             const signature = sessionSignature(s);
@@ -207,7 +247,7 @@ export function createServer(options: ServerOptions) {
       c.req.raw.signal.addEventListener("abort", cleanup);
 
       try {
-        const sessions = await providerManager.getSessions(provider);
+        const sessions = await dataSource.getSessions(provider);
         for (const s of sessions) {
           knownSessions.set(s.id, sessionSignature(s));
         }
@@ -234,13 +274,16 @@ export function createServer(options: ServerOptions) {
 
   app.get("/api/conversation/:id", async (c) => {
     const sessionId = c.req.param("id");
-    const messages = await providerManager.getConversation(sessionId);
+    const messages = await dataSource.getConversation(sessionId);
     return c.json(messages);
   });
 
   app.get("/api/conversation/:id/subagents", async (c) => {
+    if (isDemo) {
+      return c.json([]);
+    }
     const sessionId = c.req.param("id");
-    const sessionProvider = providerManager.getProviderForSession(sessionId);
+    const sessionProvider = dataSource.getProviderForSession(sessionId);
     if (sessionProvider && sessionProvider !== "claude") {
       return c.json([]);
     }
@@ -249,8 +292,11 @@ export function createServer(options: ServerOptions) {
   });
 
   app.get("/api/conversation/:id/subagent/:agentId", async (c) => {
+    if (isDemo) {
+      return c.json([]);
+    }
     const sessionId = c.req.param("id");
-    const sessionProvider = providerManager.getProviderForSession(sessionId);
+    const sessionProvider = dataSource.getProviderForSession(sessionId);
     if (sessionProvider && sessionProvider !== "claude") {
       return c.json([]);
     }
@@ -261,13 +307,13 @@ export function createServer(options: ServerOptions) {
 
   app.get("/api/conversation/:id/meta", async (c) => {
     const sessionId = c.req.param("id");
-    const meta = await providerManager.getSessionMeta(sessionId);
+    const meta = await dataSource.getSessionMeta(sessionId);
     return c.json(meta);
   });
 
   app.get("/api/conversation/:id/usage", async (c) => {
     const sessionId = c.req.param("id");
-    const meta = await providerManager.getSessionMeta(sessionId);
+    const meta = await dataSource.getSessionMeta(sessionId);
     return c.json(meta.usage);
   });
 
@@ -275,6 +321,42 @@ export function createServer(options: ServerOptions) {
     const sessionId = c.req.param("id");
     const offsetParam = c.req.query("offset");
     let offset = offsetParam ? parseInt(offsetParam, 10) : 0;
+
+    if (isDemo) {
+      return streamSSE(c, async (stream) => {
+        let isConnected = true;
+        const cleanup = () => {
+          isConnected = false;
+        };
+
+        c.req.raw.signal.addEventListener("abort", cleanup);
+
+        try {
+          const { messages, nextOffset } = await dataSource.getConversationStream(
+            sessionId,
+            offset,
+          );
+          offset = nextOffset;
+
+          await stream.writeSSE({
+            event: "messages",
+            data: JSON.stringify({ messages, nextOffset }),
+          });
+
+          while (isConnected) {
+            await stream.writeSSE({
+              event: "heartbeat",
+              data: JSON.stringify({ timestamp: Date.now() }),
+            });
+            await stream.sleep(30000);
+          }
+        } catch {
+          // Connection closed
+        } finally {
+          cleanup();
+        }
+      });
+    }
 
     return streamSSE(c, async (stream) => {
       let isConnected = true;
@@ -284,13 +366,13 @@ export function createServer(options: ServerOptions) {
         offSessionChange(handleSessionChange);
       };
 
-      const handleSessionChange = async (changedSessionId: string) => {
+        const handleSessionChange = async (changedSessionId: string) => {
         if (changedSessionId !== sessionId || !isConnected) {
           return;
         }
 
         const { messages: newMessages, nextOffset: newOffset } =
-          await providerManager.getConversationStream(sessionId, offset);
+          await dataSource.getConversationStream(sessionId, offset);
         offset = newOffset;
 
         if (newMessages.length > 0) {
@@ -309,7 +391,7 @@ export function createServer(options: ServerOptions) {
       c.req.raw.signal.addEventListener("abort", cleanup);
 
       try {
-        const { messages, nextOffset } = await providerManager.getConversationStream(
+        const { messages, nextOffset } = await dataSource.getConversationStream(
           sessionId,
           offset,
         );
@@ -343,7 +425,7 @@ export function createServer(options: ServerOptions) {
       return c.json({ results: [] });
     }
 
-    const results = await providerManager.searchConversations(query, body?.provider);
+    const results = await dataSource.searchConversations(query, body?.provider);
     return c.json({ results });
   });
 
@@ -369,8 +451,24 @@ export function createServer(options: ServerOptions) {
     app,
     port,
     start: async () => {
+      const openUrl = `http://localhost:${dev ? 12000 : port}/`;
+
+      if (isDemo) {
+        console.log(`\n  Agents Run demo server is running at ${openUrl}\n`);
+        if (!dev && shouldOpen) {
+          open(openUrl).catch(console.error);
+        }
+
+        httpServer = serve({
+          fetch: app.fetch,
+          port,
+        });
+
+        return httpServer;
+      }
+
       // 1. Initialize all providers (includes Claude storage)
-      await providerManager.init(claudeDir);
+      await dataSource.init(claudeDir);
 
       // 2. Setup Claude watcher (existing logic)
       initWatcher(getClaudeDir());
@@ -407,8 +505,6 @@ export function createServer(options: ServerOptions) {
       }
 
       // 4. Start HTTP server
-      const openUrl = `http://localhost:${dev ? 12000 : port}/`;
-
       console.log(`\n  Agents Run is running at ${openUrl}\n`);
       if (!dev && shouldOpen) {
         open(openUrl).catch(console.error);
