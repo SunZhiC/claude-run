@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import type { ConversationMessage, Session, SubagentInfo, SessionTokenUsage, SessionMeta } from "@claude-run/api";
-import { findPricing, type ModelPricing } from "../../api/pricing";
+import type { ConversationMessage, Session, SubagentInfo, SessionTokenUsage, SessionMeta, SessionCosts } from "@claude-run/api";
 import MessageBlock from "./message-block";
 import ScrollToBottomButton from "./scroll-to-bottom-button";
 import { MarkdownExportButton } from "./markdown-export";
@@ -11,42 +10,35 @@ function formatTokenCount(n: number): string {
   return n.toString();
 }
 
-function tokenCost(tokens: number, pricePerMTok: number): number {
-  return (tokens / 1_000_000) * pricePerMTok;
+function effectiveRate(cost: number, count: number): string {
+  if (count <= 0) return "$0";
+  return "$" + ((cost / count) * 1_000_000).toFixed(2);
 }
 
-interface TokenItem {
-  label: string;
-  count: number;
-  cost: number;
-  price: number;
-}
-
-function TokenUsageBar({ usage, pricing }: { usage: SessionTokenUsage; pricing: ModelPricing }) {
-  const items: TokenItem[] = [
-    { label: "Base Input", count: usage.input_tokens, price: pricing.input },
-    { label: "5m Cache Write", count: usage.cache_write_5m_tokens, price: pricing.cacheWrite5m ?? 0 },
-    { label: "1h Cache Write", count: usage.cache_write_1h_tokens, price: pricing.cacheWrite1h ?? 0 },
-    { label: "Cache Read", count: usage.cache_read_tokens, price: pricing.cacheRead ?? 0 },
-    { label: "Output", count: usage.output_tokens, price: pricing.output },
-  ].map((item) => ({ ...item, cost: tokenCost(item.count, item.price) }));
-  const totalCost = items.reduce((sum, i) => sum + i.cost, 0);
+function TokenUsageBar({ usage, costs }: { usage: SessionTokenUsage; costs: SessionCosts }) {
+  const items = [
+    { label: "Base Input", count: usage.input_tokens, cost: costs.input },
+    { label: "5m Cache Write", count: usage.cache_write_5m_tokens, cost: costs.cache_write_5m },
+    { label: "1h Cache Write", count: usage.cache_write_1h_tokens, cost: costs.cache_write_1h },
+    { label: "Cache Read", count: usage.cache_read_tokens, cost: costs.cache_read },
+    { label: "Output", count: usage.output_tokens, cost: costs.output },
+  ];
 
   return (
     <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Token Usage</h3>
-        <span className="text-sm font-medium text-amber-400">${totalCost.toFixed(4)}</span>
+        <span className="text-sm font-medium text-amber-400">${costs.total.toFixed(4)}</span>
       </div>
       <div className="grid grid-cols-5 gap-3">
-        {items.map(({ label, count, cost, price }) => (
+        {items.map(({ label, count, cost }) => (
           <div key={label} className="text-center">
             <div className="text-[11px] text-zinc-500 mb-1">{label}</div>
             <div className="text-sm text-zinc-200 font-mono">{formatTokenCount(count)}</div>
             <div className="text-[11px] text-zinc-500 mt-0.5">
               ${cost.toFixed(4)}
             </div>
-            <div className="text-[10px] text-zinc-600">${price}/MTok</div>
+            <div className="text-[10px] text-zinc-600">{effectiveRate(cost, count)}/MTok</div>
           </div>
         ))}
       </div>
@@ -54,48 +46,30 @@ function TokenUsageBar({ usage, pricing }: { usage: SessionTokenUsage; pricing: 
   );
 }
 
-function GenericTokenUsageBar({ usage, pricing }: { usage: SessionTokenUsage; pricing: ModelPricing | undefined }) {
-  const hasPricing = !!pricing;
+function GenericTokenUsageBar({ usage, costs }: { usage: SessionTokenUsage; costs: SessionCosts }) {
   const items = [
-    { label: "Input", count: usage.input_tokens, price: pricing?.input ?? 0 },
-    { label: "Cache Read", count: usage.cache_read_tokens, price: pricing?.cacheRead ?? 0 },
-    { label: "Output", count: usage.output_tokens, price: pricing?.output ?? 0 },
+    { label: "Input", count: usage.input_tokens, cost: costs.input },
+    { label: "Cache Read", count: usage.cache_read_tokens, cost: costs.cache_read },
+    { label: "Output", count: usage.output_tokens, cost: costs.output },
   ].filter(item => item.count > 0);
 
   if (items.length === 0) return null;
-
-  const totalCost = hasPricing
-    ? items.reduce((sum, i) => sum + tokenCost(i.count, i.price), 0)
-    : 0;
 
   return (
     <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/50 p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Token Usage</h3>
-        {hasPricing ? (
-          <span className="text-sm font-medium text-amber-400">${totalCost.toFixed(4)}</span>
-        ) : (
-          <span className="text-sm font-medium text-zinc-300">
-            {formatTokenCount(items.reduce((sum, i) => sum + i.count, 0))} total
-          </span>
-        )}
+        <span className="text-sm font-medium text-amber-400">${costs.total.toFixed(4)}</span>
       </div>
       <div className="flex justify-center gap-8">
-        {items.map(({ label, count, price }) => {
-          const cost = tokenCost(count, price);
-          return (
-            <div key={label} className="text-center">
-              <div className="text-[11px] text-zinc-500 mb-1">{label}</div>
-              <div className="text-sm text-zinc-200 font-mono">{formatTokenCount(count)}</div>
-              {hasPricing && (
-                <>
-                  <div className="text-[11px] text-zinc-500 mt-0.5">${cost.toFixed(4)}</div>
-                  <div className="text-[10px] text-zinc-600">${price}/MTok</div>
-                </>
-              )}
-            </div>
-          );
-        })}
+        {items.map(({ label, count, cost }) => (
+          <div key={label} className="text-center">
+            <div className="text-[11px] text-zinc-500 mb-1">{label}</div>
+            <div className="text-sm text-zinc-200 font-mono">{formatTokenCount(count)}</div>
+            <div className="text-[11px] text-zinc-500 mt-0.5">${cost.toFixed(4)}</div>
+            <div className="text-[10px] text-zinc-600">{effectiveRate(cost, count)}/MTok</div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -123,6 +97,7 @@ function SessionView(props: SessionViewProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [subagentMap, setSubagentMap] = useState<Map<string, string>>(new Map());
   const [tokenUsage, setTokenUsage] = useState<SessionTokenUsage | null>(null);
+  const [sessionCosts, setSessionCosts] = useState<SessionCosts | null>(null);
   const [metaModel, setMetaModel] = useState<string | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
@@ -186,6 +161,7 @@ function SessionView(props: SessionViewProps) {
     setMessages([]);
     setSubagentMap(new Map());
     setTokenUsage(null);
+    setSessionCosts(null);
     setMetaModel(undefined);
     offsetRef.current = 0;
     retryCountRef.current = 0;
@@ -195,6 +171,7 @@ function SessionView(props: SessionViewProps) {
       .then((data: SessionMeta) => {
         if (!mountedRef.current) return;
         setTokenUsage(data.usage);
+        setSessionCosts(data.costs);
         setMetaModel(data.model);
         const map = new Map<string, string>();
         for (const info of data.subagents) {
@@ -282,22 +259,18 @@ function SessionView(props: SessionViewProps) {
               <MarkdownExportButton session={session} messages={messages} />
             </div>
           </div>
-          {tokenUsage && hasNonZeroUsage(tokenUsage) && (() => {
-            const modelId = metaModel || session.model || "";
-            const pricing = findPricing(modelId);
-            // Only show token pricing for known providers (claude/codex/gemini)
-            if (!pricing) return null;
+          {tokenUsage && hasNonZeroUsage(tokenUsage) && sessionCosts && (() => {
             const provider = session.provider || "claude";
             if (provider === "claude") {
               return (
                 <div className="mb-6">
-                  <TokenUsageBar usage={tokenUsage} pricing={pricing} />
+                  <TokenUsageBar usage={tokenUsage} costs={sessionCosts} />
                 </div>
               );
             }
             return (
               <div className="mb-6">
-                <GenericTokenUsageBar usage={tokenUsage} pricing={pricing} />
+                <GenericTokenUsageBar usage={tokenUsage} costs={sessionCosts} />
               </div>
             );
           })()}

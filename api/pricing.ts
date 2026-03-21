@@ -410,6 +410,110 @@ export const ALL_PRICING: Record<string, ModelPricing> = {
  * Find pricing for a model ID. Supports fuzzy matching:
  * e.g. "claude-opus-4-6-20260301" will match "claude-opus-4-6"
  */
+// ---------------------------------------------------------------------------
+// Cost calculation
+// ---------------------------------------------------------------------------
+
+const LONG_CONTEXT_THRESHOLD = 200_000;
+
+export function tokenCost(tokens: number, pricePerMTok: number): number {
+  return (tokens / 1_000_000) * pricePerMTok;
+}
+
+export interface TurnUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_5m_tokens: number;
+  cache_write_1h_tokens: number;
+}
+
+export interface SessionCosts {
+  input: number;
+  output: number;
+  cache_write_5m: number;
+  cache_write_1h: number;
+  cache_read: number;
+  total: number;
+  has_long_context: boolean;
+}
+
+/**
+ * Calculate session costs from per-turn data (Claude, Gemini).
+ * Detects long-context pricing when a single turn exceeds 200K total input.
+ */
+export function calculateSessionCosts(
+  turns: TurnUsage[],
+  pricing: ModelPricing,
+): SessionCosts {
+  let inputCost = 0;
+  let outputCost = 0;
+  let cacheReadCost = 0;
+  let cacheWrite5mCost = 0;
+  let cacheWrite1hCost = 0;
+  let hasLongContext = false;
+
+  for (const turn of turns) {
+    const totalInput =
+      turn.input_tokens + turn.cache_read_tokens +
+      turn.cache_write_5m_tokens + turn.cache_write_1h_tokens;
+    const isLong =
+      totalInput > LONG_CONTEXT_THRESHOLD && pricing.longContextInput != null;
+    if (isLong) hasLongContext = true;
+
+    const inputPrice = isLong ? pricing.longContextInput! : pricing.input;
+    const outputPrice = isLong
+      ? (pricing.longContextOutput ?? pricing.output)
+      : pricing.output;
+
+    inputCost += tokenCost(turn.input_tokens, inputPrice);
+    outputCost += tokenCost(turn.output_tokens, outputPrice);
+    cacheReadCost += tokenCost(turn.cache_read_tokens, pricing.cacheRead ?? 0);
+    cacheWrite5mCost += tokenCost(turn.cache_write_5m_tokens, pricing.cacheWrite5m ?? 0);
+    cacheWrite1hCost += tokenCost(turn.cache_write_1h_tokens, pricing.cacheWrite1h ?? 0);
+  }
+
+  const total = inputCost + outputCost + cacheReadCost + cacheWrite5mCost + cacheWrite1hCost;
+  return {
+    input: inputCost,
+    output: outputCost,
+    cache_write_5m: cacheWrite5mCost,
+    cache_write_1h: cacheWrite1hCost,
+    cache_read: cacheReadCost,
+    total,
+    has_long_context: hasLongContext,
+  };
+}
+
+/**
+ * Calculate session costs from aggregated totals (Codex).
+ * No long-context detection possible — uses base pricing only.
+ */
+export function calculateAggregateCosts(
+  usage: { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_5m_tokens: number; cache_write_1h_tokens: number },
+  pricing: ModelPricing,
+): SessionCosts {
+  const inputCost = tokenCost(usage.input_tokens, pricing.input);
+  const outputCost = tokenCost(usage.output_tokens, pricing.output);
+  const cacheReadCost = tokenCost(usage.cache_read_tokens, pricing.cacheRead ?? 0);
+  const cacheWrite5mCost = tokenCost(usage.cache_write_5m_tokens, pricing.cacheWrite5m ?? 0);
+  const cacheWrite1hCost = tokenCost(usage.cache_write_1h_tokens, pricing.cacheWrite1h ?? 0);
+  const total = inputCost + outputCost + cacheReadCost + cacheWrite5mCost + cacheWrite1hCost;
+  return {
+    input: inputCost,
+    output: outputCost,
+    cache_write_5m: cacheWrite5mCost,
+    cache_write_1h: cacheWrite1hCost,
+    cache_read: cacheReadCost,
+    total,
+    has_long_context: false,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Model lookup
+// ---------------------------------------------------------------------------
+
 export function findPricing(modelId: string): ModelPricing | undefined {
   if (!modelId) return undefined;
   const normalized = modelId.toLowerCase();

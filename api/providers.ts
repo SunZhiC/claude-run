@@ -119,6 +119,7 @@ class ProviderManager {
             cache_read_tokens: 0,
           },
           subagents: [],
+          costs: null,
         };
   }
 

@@ -14,6 +14,7 @@ import type {
   SearchMatch,
   SessionTokenUsage,
 } from "./storage";
+import { findPricing, calculateAggregateCosts } from "./pricing";
 
 interface CodexSessionMeta {
   cwd: string;
@@ -497,7 +498,7 @@ export class CodexAdapter implements ProviderAdapter {
     let model: string | undefined;
 
     const filePath = this.fileIndex.get(sessionId);
-    if (!filePath) return { usage, subagents: [] };
+    if (!filePath) return { usage, subagents: [], costs: null };
 
     const meta = this.sessionMetaCache.get(sessionId);
     if (meta?.model) model = meta.model;
@@ -530,7 +531,10 @@ export class CodexAdapter implements ProviderAdapter {
       }
     } catch { /* file not readable */ }
 
-    return { usage, subagents: [], model };
+    const pricing = findPricing(model ?? "");
+    const costs = pricing ? calculateAggregateCosts(usage, pricing) : null;
+
+    return { usage, subagents: [], model, costs };
   }
 
   async searchConversations(query: string): Promise<SearchResult[]> {

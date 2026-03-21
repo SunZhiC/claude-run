@@ -2,6 +2,7 @@ import { readdir, readFile, writeFile, stat, open } from "fs/promises";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
+import { findPricing, calculateSessionCosts, type TurnUsage, type SessionCosts } from "./pricing";
 
 export interface HistoryEntry {
   display: string;
@@ -405,10 +406,13 @@ export async function getConversation(
   });
 }
 
+export type { SessionCosts };
+
 export interface SessionMeta {
   usage: SessionTokenUsage;
   subagents: SubagentInfo[];
   model?: string;
+  costs: SessionCosts | null;
 }
 
 export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
@@ -420,10 +424,11 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
     cache_read_tokens: 0,
   };
   const subagents: SubagentInfo[] = [];
+  const turns: TurnUsage[] = [];
   let model: string | undefined;
 
   const filePath = await findSessionFile(sessionId);
-  if (!filePath) return { usage, subagents };
+  if (!filePath) return { usage, subagents, costs: null };
 
   try {
     const content = await readFile(filePath, "utf-8");
@@ -441,18 +446,34 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
           }
           const u = msg?.message?.usage;
           if (u) {
-            usage.input_tokens += u.input_tokens ?? 0;
-            usage.output_tokens += u.output_tokens ?? 0;
-            usage.cache_read_tokens += u.cache_read_input_tokens ?? 0;
+            const turnInput = u.input_tokens ?? 0;
+            const turnOutput = u.output_tokens ?? 0;
+            const turnCacheRead = u.cache_read_input_tokens ?? 0;
+            let turnCacheWrite5m = 0;
+            let turnCacheWrite1h = 0;
 
             if (u.cache_creation) {
-              usage.cache_write_5m_tokens += u.cache_creation.ephemeral_5m_input_tokens ?? 0;
-              usage.cache_write_1h_tokens += u.cache_creation.ephemeral_1h_input_tokens ?? 0;
+              turnCacheWrite5m = u.cache_creation.ephemeral_5m_input_tokens ?? 0;
+              turnCacheWrite1h = u.cache_creation.ephemeral_1h_input_tokens ?? 0;
             } else if (u.cache_creation_input_tokens) {
               // Without the TTL breakdown, we can't determine the split.
               // Older API responses predate the 1h TTL option, so default to 5m.
-              usage.cache_write_5m_tokens += u.cache_creation_input_tokens;
+              turnCacheWrite5m = u.cache_creation_input_tokens;
             }
+
+            usage.input_tokens += turnInput;
+            usage.output_tokens += turnOutput;
+            usage.cache_read_tokens += turnCacheRead;
+            usage.cache_write_5m_tokens += turnCacheWrite5m;
+            usage.cache_write_1h_tokens += turnCacheWrite1h;
+
+            turns.push({
+              input_tokens: turnInput,
+              output_tokens: turnOutput,
+              cache_read_tokens: turnCacheRead,
+              cache_write_5m_tokens: turnCacheWrite5m,
+              cache_write_1h_tokens: turnCacheWrite1h,
+            });
           }
         }
 
@@ -478,7 +499,10 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
     // file not readable
   }
 
-  return { usage, subagents, model };
+  const pricing = findPricing(model ?? "");
+  const costs = pricing ? calculateSessionCosts(turns, pricing) : null;
+
+  return { usage, subagents, model, costs };
 }
 
 export async function getSessionTokenUsage(

@@ -12,6 +12,7 @@ import type {
   SearchMatch,
   SessionTokenUsage,
 } from "./storage";
+import { findPricing, calculateSessionCosts, type TurnUsage } from "./pricing";
 
 interface GeminiSessionMeta {
   startTime: string;
@@ -342,22 +343,45 @@ export class GeminiAdapter implements ProviderAdapter {
       cache_write_1h_tokens: 0,
       cache_read_tokens: 0,
     };
+    const turns: TurnUsage[] = [];
+    let model: string | undefined;
+
+    const cached = this.sessionCache.get(sessionId);
+    if (cached?.model) model = cached.model;
 
     const filePath = this.fileIndex.get(sessionId);
-    if (!filePath) return { usage, subagents: [] };
+    if (!filePath) return { usage, subagents: [], costs: null };
 
     try {
       const data = JSON.parse(await readFile(filePath, "utf-8"));
       for (const m of (data.messages ?? [])) {
-        if (m.type === "gemini" && m.tokens) {
-          usage.input_tokens += m.tokens.input ?? 0;
-          usage.output_tokens += m.tokens.output ?? 0;
-          usage.cache_read_tokens += m.tokens.cached ?? 0;
+        if (m.type === "gemini") {
+          if (!model && m.model) model = m.model;
+          if (m.tokens) {
+            const turnInput = m.tokens.input ?? 0;
+            const turnOutput = m.tokens.output ?? 0;
+            const turnCacheRead = m.tokens.cached ?? 0;
+
+            usage.input_tokens += turnInput;
+            usage.output_tokens += turnOutput;
+            usage.cache_read_tokens += turnCacheRead;
+
+            turns.push({
+              input_tokens: turnInput,
+              output_tokens: turnOutput,
+              cache_read_tokens: turnCacheRead,
+              cache_write_5m_tokens: 0,
+              cache_write_1h_tokens: 0,
+            });
+          }
         }
       }
     } catch { /* file not readable */ }
 
-    return { usage, subagents: [] };
+    const pricing = findPricing(model ?? "");
+    const costs = pricing ? calculateSessionCosts(turns, pricing) : null;
+
+    return { usage, subagents: [], model, costs };
   }
 
   async searchConversations(query: string): Promise<SearchResult[]> {
