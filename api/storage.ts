@@ -408,6 +408,7 @@ export async function getConversation(
 export interface SessionMeta {
   usage: SessionTokenUsage;
   subagents: SubagentInfo[];
+  model?: string;
 }
 
 export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
@@ -419,6 +420,7 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
     cache_read_tokens: 0,
   };
   const subagents: SubagentInfo[] = [];
+  let model: string | undefined;
 
   const filePath = await findSessionFile(sessionId);
   if (!filePath) return { usage, subagents };
@@ -434,6 +436,9 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
 
         // Accumulate token usage from assistant messages
         if (msg.type === "assistant") {
+          if (!model && msg.message?.model) {
+            model = msg.message.model;
+          }
           const u = msg?.message?.usage;
           if (u) {
             usage.input_tokens += u.input_tokens ?? 0;
@@ -444,7 +449,9 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
               usage.cache_write_5m_tokens += u.cache_creation.ephemeral_5m_input_tokens ?? 0;
               usage.cache_write_1h_tokens += u.cache_creation.ephemeral_1h_input_tokens ?? 0;
             } else if (u.cache_creation_input_tokens) {
-              usage.cache_write_1h_tokens += u.cache_creation_input_tokens;
+              // Without the TTL breakdown, we can't determine the split.
+              // Older API responses predate the 1h TTL option, so default to 5m.
+              usage.cache_write_5m_tokens += u.cache_creation_input_tokens;
             }
           }
         }
@@ -471,7 +478,7 @@ export async function getSessionMeta(sessionId: string): Promise<SessionMeta> {
     // file not readable
   }
 
-  return { usage, subagents };
+  return { usage, subagents, model };
 }
 
 export async function getSessionTokenUsage(

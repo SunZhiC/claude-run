@@ -417,9 +417,12 @@ export function findPricing(modelId: string): ModelPricing | undefined {
   if (ALL_PRICING[normalized]) {
     return ALL_PRICING[normalized];
   }
-  // Prefix match (model IDs often have date suffixes)
-  const key = Object.keys(ALL_PRICING).find((k) => normalized.startsWith(k));
-  if (key) return ALL_PRICING[key];
+  // Longest prefix match — sort candidates by key length descending so
+  // "gpt-5.1-codex-mini" beats "gpt-5.1" for input "gpt-5.1-codex-mini-20260301"
+  const prefixMatches = Object.keys(ALL_PRICING)
+    .filter((k) => normalized.startsWith(k))
+    .sort((a, b) => b.length - a.length);
+  if (prefixMatches.length > 0) return ALL_PRICING[prefixMatches[0]];
   // Reverse prefix match (e.g. "o3" matches "o3-something")
   const rkey = Object.keys(ALL_PRICING).find((k) => k.startsWith(normalized));
   return rkey ? ALL_PRICING[rkey] : undefined;

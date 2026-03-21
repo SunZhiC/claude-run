@@ -522,7 +522,8 @@ export class CodexAdapter implements ProviderAdapter {
             // Subtract cached from input to align with Claude's semantics.
             const cached = tu.cached_input_tokens ?? 0;
             usage.input_tokens = (tu.input_tokens ?? 0) - cached;
-            usage.output_tokens = (tu.output_tokens ?? 0) + (tu.reasoning_output_tokens ?? 0);
+            // reasoning_output_tokens is a subset of output_tokens (not additive)
+            usage.output_tokens = tu.output_tokens ?? 0;
             usage.cache_read_tokens = cached;
           }
         } catch { /* skip */ }
