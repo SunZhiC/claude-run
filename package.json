@@ -18,6 +18,7 @@
     "build:web": "vite build --config web/vite.config.ts",
     "build:server": "tsup api/index.ts --format esm --dts --clean",
     "demo:gif": "pnpm build && node scripts/generate-readme-demo.mjs",
+    "sync:homebrew": "bash scripts/sync-homebrew-tap.sh",
     "start": "node dist/index.js",
     "test": "vitest run",
     "prepublishOnly": "pnpm build"

@@ -120,6 +120,16 @@ pnpm build
 pnpm demo:gif
 ```
 
+## Release
+
+```bash
+# Publish a new npm release
+npm publish
+
+# Sync the Homebrew tap formula to the latest published npm version
+pnpm sync:homebrew
+```
+
 ## License
 
 MIT
