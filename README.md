@@ -2,6 +2,8 @@
 
 # Agents Run
 
+English | [简体中文](./README.zh-CN.md)
+
 Browse AI coding session history from multiple tools in a unified web UI
 
 [![npm version](https://img.shields.io/npm/v/agents-run.svg)](https://www.npmjs.com/package/agents-run)
