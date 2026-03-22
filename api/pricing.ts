@@ -54,8 +54,7 @@ export const CLAUDE_PRICING: Record<string, ModelPricing> = {
     cacheWrite5m: 3.75,   // 1.25x input
     cacheWrite1h: 6.0,    // 2x input
     cacheRead: 0.3,       // 0.1x input
-    longContextInput: 6.0,
-    longContextOutput: 22.5,
+    // No long-context surcharge — full 1M window at standard rates
   },
   "claude-haiku-4-5": {
     name: "Claude Haiku 4.5",
