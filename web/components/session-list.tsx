@@ -309,14 +309,30 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                     width: "100%",
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
-                  className={`group px-3 py-3.5 text-left transition-colors overflow-hidden border-b border-zinc-800/40 cursor-pointer ${
+                  className={`group relative px-3 py-3.5 pr-10 text-left transition-colors overflow-hidden border-b border-zinc-800/40 cursor-pointer ${
                     selectedSession === session.id
                       ? "bg-cyan-700/30"
                       : "hover:bg-zinc-900/60"
                   } ${virtualItem.index === 0 ? "border-t border-t-zinc-800/40" : ""}`}
                   onClick={() => onSelectSession(session.id)}
                 >
-                  <div className="flex items-center justify-between mb-1">
+                  {onDeleteSession && session.capabilities?.delete && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("Delete this session from history?")) {
+                          onDeleteSession(session.id);
+                        }
+                      }}
+                      className="absolute right-3 top-3 flex items-center justify-center h-5 w-5 rounded text-zinc-500 opacity-80 hover:opacity-100 hover:text-red-400 hover:bg-zinc-700/80 transition-colors"
+                      title="Delete session"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  )}
+                  <div className="mb-1 flex items-center">
                     <span className="text-[10px] text-zinc-500 font-medium flex items-center gap-1.5">
                       {session.projectName}
                       {(() => {
@@ -341,50 +357,26 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                         return null;
                       })()}
                     </span>
-                    {onDeleteSession && session.capabilities?.delete ? (
-                      <>
-                        <span className="text-[10px] text-zinc-600 group-hover:invisible h-4 flex items-center gap-1">
-                          <span>{formatTime(session.timestamp)}</span>
-                          <span>·</span>
-                          <span>{session.messageCount} msgs</span>
-                          {session.model && (
-                            <>
-                              <span>·</span>
-                              <span className="truncate max-w-[100px]">{session.model}</span>
-                            </>
-                          )}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm("Delete this session from history?")) {
-                              onDeleteSession(session.id);
-                            }
-                          }}
-                          className="hidden group-hover:flex items-center justify-center h-4 w-4 -mr-0.5 rounded text-zinc-500 hover:text-red-400 hover:bg-zinc-700/80 transition-colors"
-                          title="Delete session"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </>
-                    ) : (
-                      <span className="text-[10px] text-zinc-600 h-4 flex items-center gap-1">
-                        <span>{formatTime(session.timestamp)}</span>
-                        <span>·</span>
-                        <span>{session.messageCount} msgs</span>
-                      </span>
-                    )}
                   </div>
-                  <p className="text-[12px] text-zinc-300 leading-snug line-clamp-2 break-words">
+                  <p className="pr-2 text-[12px] text-zinc-300 leading-snug line-clamp-2 break-words">
                     {session.display}
                   </p>
                   {isSessionIdMatch(session.id, search) && (
-                    <p className="mt-1 text-[10px] text-zinc-600 leading-snug break-all">
+                    <p className="mt-1 pr-2 text-[10px] text-zinc-600 leading-snug break-all">
                       {highlightMatch(session.id, search)}
                     </p>
                   )}
+                  <div className="mt-1 flex items-center gap-1 pr-2 text-[10px] text-zinc-600">
+                    <span>{formatTime(session.timestamp)}</span>
+                    <span>·</span>
+                    <span>{session.messageCount} msgs</span>
+                    {session.model && (
+                      <>
+                        <span>·</span>
+                        <span className="truncate">{session.model}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}
