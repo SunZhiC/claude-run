@@ -1,7 +1,13 @@
 import { useState, useMemo, memo, useRef, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Session, SearchResult } from "@agents-run/api";
-import { formatTime, getProviderInfo, getCliProviderInfo } from "../utils";
+import {
+  formatTime,
+  getProviderInfo,
+  getCliProviderInfo,
+  isSessionIdMatch,
+  matchesSessionSearch,
+} from "../utils";
 
 interface SessionListProps {
   sessions: Session[];
@@ -32,12 +38,7 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
     if (!search.trim() || searchMode === "content") {
       return sessions;
     }
-    const query = search.toLowerCase();
-    return sessions.filter(
-      (s) =>
-        s.display.toLowerCase().includes(query) ||
-        s.projectName.toLowerCase().includes(query)
-    );
+    return sessions.filter((s) => matchesSessionSearch(s, search));
   }, [sessions, search, searchMode]);
 
   // Full-text search API call
@@ -280,6 +281,11 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                     <p className="text-[12px] text-zinc-300 leading-snug line-clamp-1 break-words mb-1">
                       {result.display}
                     </p>
+                    {isSessionIdMatch(result.sessionId, search) && (
+                      <p className="text-[10px] text-zinc-600 leading-snug break-all mb-1">
+                        {highlightMatch(result.sessionId, search)}
+                      </p>
+                    )}
                     {result.firstMatch && (
                       <p className="text-[11px] text-zinc-500 leading-snug line-clamp-2 break-words">
                         {highlightMatch(result.firstMatch.snippet, search)}
@@ -374,6 +380,11 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                   <p className="text-[12px] text-zinc-300 leading-snug line-clamp-2 break-words">
                     {session.display}
                   </p>
+                  {isSessionIdMatch(session.id, search) && (
+                    <p className="mt-1 text-[10px] text-zinc-600 leading-snug break-all">
+                      {highlightMatch(session.id, search)}
+                    </p>
+                  )}
                 </div>
               );
             })}

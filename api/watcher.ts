@@ -1,8 +1,15 @@
 import { watch, type FSWatcher } from "chokidar";
 import { basename, join } from "path";
+import type { ProviderName } from "./provider-types";
 
 type HistoryChangeCallback = () => void;
-type SessionChangeCallback = (sessionId: string, filePath: string) => void;
+export interface SessionChangeEvent {
+  sessionId: string;
+  filePath: string;
+  provider: ProviderName;
+}
+
+type SessionChangeCallback = (event: SessionChangeEvent) => void;
 
 let watcher: FSWatcher | null = null;
 let claudeDir = "";
@@ -22,10 +29,11 @@ function emitChange(filePath: string): void {
       callback();
     }
   } else if (filePath.endsWith(".jsonl")) {
-    const sessionId = basename(filePath, ".jsonl");
-    for (const callback of sessionChangeListeners) {
-      callback(sessionId, filePath);
-    }
+    emitSessionChange({
+      sessionId: basename(filePath, ".jsonl"),
+      filePath,
+      provider: "claude",
+    });
   }
 }
 
@@ -107,9 +115,9 @@ export function emitHistoryChange(): void {
   }
 }
 
-export function emitSessionChange(sessionId: string, filePath: string): void {
+export function emitSessionChange(event: SessionChangeEvent): void {
   for (const callback of sessionChangeListeners) {
-    callback(sessionId, filePath);
+    callback(event);
   }
 }
 

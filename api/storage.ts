@@ -3,6 +3,12 @@ import { join, basename } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
 import { findPricing, calculateSessionCosts, type TurnUsage, type SessionCosts } from "./pricing";
+import {
+  createSessionIdSearchResult,
+  createSnippet,
+  escapeRegExp,
+  matchesSessionId,
+} from "./search-utils";
 
 export interface HistoryEntry {
   display: string;
@@ -771,29 +777,6 @@ function extractMessageText(msg: ConversationMessage): string {
   return "";
 }
 
-function createSnippet(text: string, query: string, contextLength: number = 60): string {
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const index = lowerText.indexOf(lowerQuery);
-
-  if (index === -1) {
-    return text.slice(0, contextLength * 2);
-  }
-
-  const start = Math.max(0, index - contextLength);
-  const end = Math.min(text.length, index + query.length + contextLength);
-
-  let snippet = text.slice(start, end);
-  if (start > 0) snippet = "..." + snippet;
-  if (end < text.length) snippet = snippet + "...";
-
-  return snippet;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 async function searchSessionFile(
   filePath: string,
   session: Session,
@@ -868,6 +851,10 @@ export async function searchConversations(query: string): Promise<SearchResult[]
       const batch = sessions.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (session) => {
+          if (matchesSessionId(session.id, trimmedQuery)) {
+            return createSessionIdSearchResult(session, trimmedQuery);
+          }
+
           const filePath = await findSessionFile(session.id);
           if (!filePath) return null;
           return searchSessionFile(filePath, session, trimmedQuery, lowerQuery, queryRegex);

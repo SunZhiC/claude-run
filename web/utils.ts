@@ -1,3 +1,5 @@
+import type { Session } from "@agents-run/api";
+
 export function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
   const y = date.getFullYear();
@@ -59,4 +61,21 @@ export function sanitizeText(text: string): string {
     result = result.replace(pattern, "");
   }
   return result.trim();
+}
+
+export function matchesSessionSearch(session: Session, query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return true;
+
+  return (
+    session.display.toLowerCase().includes(trimmed) ||
+    session.projectName.toLowerCase().includes(trimmed) ||
+    session.id.toLowerCase().includes(trimmed)
+  );
+}
+
+export function isSessionIdMatch(sessionId: string, query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return false;
+  return sessionId.toLowerCase().includes(trimmed);
 }

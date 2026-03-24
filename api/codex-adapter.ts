@@ -15,6 +15,12 @@ import type {
   SessionTokenUsage,
 } from "./storage";
 import { findPricing, calculateAggregateCosts } from "./pricing";
+import {
+  createSessionIdSearchResult,
+  createSnippet,
+  escapeRegExp,
+  matchesSessionId,
+} from "./search-utils";
 
 interface CodexSessionMeta {
   cwd: string;
@@ -90,29 +96,6 @@ async function parallelMap<T, R>(
   const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker());
   await Promise.all(workers);
   return results;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function createSnippet(text: string, query: string, contextLength: number = 60): string {
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const index = lowerText.indexOf(lowerQuery);
-
-  if (index === -1) {
-    return text.slice(0, contextLength * 2);
-  }
-
-  const start = Math.max(0, index - contextLength);
-  const end = Math.min(text.length, index + query.length + contextLength);
-
-  let snippet = text.slice(start, end);
-  if (start > 0) snippet = "..." + snippet;
-  if (end < text.length) snippet = snippet + "...";
-
-  return snippet;
 }
 
 export class CodexAdapter implements ProviderAdapter {
@@ -551,6 +534,10 @@ export class CodexAdapter implements ProviderAdapter {
       const batch = sessions.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (session) => {
+          if (matchesSessionId(session.id, trimmedQuery)) {
+            return createSessionIdSearchResult(session, trimmedQuery);
+          }
+
           const filePath = this.fileIndex.get(session.id);
           if (!filePath) return null;
 

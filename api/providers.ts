@@ -14,6 +14,12 @@ import * as storage from "./storage";
 import { CodexAdapter } from "./codex-adapter";
 import { GeminiAdapter } from "./gemini-adapter";
 
+const ADAPTER_PRIORITY: Record<ProviderName, number> = {
+  codex: 3,
+  gemini: 2,
+  claude: 1,
+};
+
 function createClaudeAdapter(claudeDir?: string): ProviderAdapter {
   storage.initStorage(claudeDir);
 
@@ -53,7 +59,23 @@ function createClaudeAdapter(claudeDir?: string): ProviderAdapter {
   };
 }
 
-class ProviderManager {
+export function pickPreferredAdapter(
+  adapters: ProviderAdapter[],
+  sessionId: string,
+): ProviderAdapter | undefined {
+  const owners = adapters.filter((a) => a.ownsSession(sessionId));
+  if (owners.length <= 1) {
+    return owners[0];
+  }
+
+  return owners.reduce((best, candidate) => {
+    return ADAPTER_PRIORITY[candidate.name] > ADAPTER_PRIORITY[best.name]
+      ? candidate
+      : best;
+  });
+}
+
+export class ProviderManager {
   private adapters: ProviderAdapter[] = [];
 
   async init(claudeDir?: string): Promise<void> {
@@ -136,7 +158,7 @@ class ProviderManager {
   }
 
   private findAdapter(sessionId: string): ProviderAdapter | undefined {
-    return this.adapters.find((a) => a.ownsSession(sessionId));
+    return pickPreferredAdapter(this.adapters, sessionId);
   }
 
   getAvailableProviders(): ProviderName[] {

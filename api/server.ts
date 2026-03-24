@@ -11,7 +11,7 @@ import {
   deleteSession,
   renameSession,
 } from "./storage";
-import type { ProviderName } from "./provider-types";
+import type { ProviderAdapter, ProviderName } from "./provider-types";
 import { providerManager } from "./providers";
 import {
   initWatcher,
@@ -24,6 +24,7 @@ import {
   offHistoryChange,
   onSessionChange,
   offSessionChange,
+  type SessionChangeEvent,
 } from "./watcher";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -49,6 +50,18 @@ export interface ServerOptions {
   claudeDir?: string;
   dev?: boolean;
   open?: boolean;
+}
+
+export function applyClaudeSessionChange(
+  claudeAdapter: Pick<ProviderAdapter, "addToFileIndex" | "invalidateSessionMeta">,
+  event: SessionChangeEvent,
+): void {
+  if (event.provider !== "claude") {
+    return;
+  }
+
+  claudeAdapter.addToFileIndex(event.sessionId, event.filePath);
+  claudeAdapter.invalidateSessionMeta(event.sessionId);
 }
 
 export function createServer(options: ServerOptions) {
@@ -238,7 +251,7 @@ export function createServer(options: ServerOptions) {
         await syncSessions();
       };
 
-      const handleSessionListChange = async () => {
+      const handleSessionListChange = async (_event: SessionChangeEvent) => {
         await syncSessions();
       };
 
@@ -360,14 +373,19 @@ export function createServer(options: ServerOptions) {
 
     return streamSSE(c, async (stream) => {
       let isConnected = true;
+      const expectedProvider = dataSource.getProviderForSession(sessionId);
 
       const cleanup = () => {
         isConnected = false;
         offSessionChange(handleSessionChange);
       };
 
-        const handleSessionChange = async (changedSessionId: string) => {
-        if (changedSessionId !== sessionId || !isConnected) {
+      const handleSessionChange = async (event: SessionChangeEvent) => {
+        if (event.sessionId !== sessionId || !isConnected) {
+          return;
+        }
+
+        if (expectedProvider && event.provider !== expectedProvider) {
           return;
         }
 
@@ -480,9 +498,8 @@ export function createServer(options: ServerOptions) {
         claudeAdapter.invalidateHistoryCache();
       });
 
-      onSessionChange((sessionId: string, filePath: string) => {
-        claudeAdapter.addToFileIndex(sessionId, filePath);
-        claudeAdapter.invalidateSessionMeta(sessionId);
+      onSessionChange((event) => {
+        applyClaudeSessionChange(claudeAdapter, event);
       });
 
       // 3. Setup watchers for non-Claude providers
@@ -496,7 +513,11 @@ export function createServer(options: ServerOptions) {
           if (sessionId) {
             adapter.addToFileIndex(sessionId, filePath);
             adapter.invalidateSessionMeta(sessionId);
-            emitSessionChange(sessionId, filePath);
+            emitSessionChange({
+              sessionId,
+              filePath,
+              provider: adapter.name,
+            });
           } else {
             adapter.invalidateHistoryCache();
             emitHistoryChange();
