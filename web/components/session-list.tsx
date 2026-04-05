@@ -30,16 +30,42 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
   const [search, setSearch] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("title");
   const [searchState, setSearchState] = useState<SearchState>({ results: [], loading: false });
+  const [orphanSessions, setOrphanSessions] = useState<Session[]>([]);
   const parentRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Fetch orphan sessions (on disk but not in history) when title search looks like a session ID
+  useEffect(() => {
+    if (searchMode !== "title" || !search.trim() || !/^[0-9a-f-]{4,}$/i.test(search.trim())) {
+      setOrphanSessions([]);
+      return;
+    }
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/sessions/resolve?q=${encodeURIComponent(search.trim())}`);
+        if (res.ok) {
+          const data = await res.json();
+          setOrphanSessions(data.sessions);
+        }
+      } catch { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [search, searchMode]);
 
   // Title search filtering
   const filteredSessions = useMemo(() => {
     if (!search.trim() || searchMode === "content") {
       return sessions;
     }
-    return sessions.filter((s) => matchesSessionSearch(s, search));
-  }, [sessions, search, searchMode]);
+    const filtered = sessions.filter((s) => matchesSessionSearch(s, search));
+    const knownIds = new Set(filtered.map((s) => s.id));
+    for (const orphan of orphanSessions) {
+      if (!knownIds.has(orphan.id)) {
+        filtered.push(orphan);
+      }
+    }
+    return filtered;
+  }, [sessions, search, searchMode, orphanSessions]);
 
   // Full-text search API call
   const performContentSearch = useCallback(async (query: string) => {

@@ -178,6 +178,7 @@ function App() {
   const [copied, setCopied] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
   const [providers, setProviders] = useState<{ name: string; sessionCount: number }[]>([]);
+  const [orphanSession, setOrphanSession] = useState<Session | null>(null);
 
   useEffect(() => {
     let attempt = 0;
@@ -248,8 +249,23 @@ function App() {
       return null;
     }
 
-    return sessions.find((s) => s.id === selectedSession) || null;
-  }, [sessions, selectedSession]);
+    return sessions.find((s) => s.id === selectedSession) || orphanSession || null;
+  }, [sessions, selectedSession, orphanSession]);
+
+  // Fetch orphan session data when selected session is not in the main list
+  useEffect(() => {
+    if (!selectedSession || sessions.find((s) => s.id === selectedSession)) {
+      setOrphanSession(null);
+      return;
+    }
+    fetch(`/api/sessions/resolve?q=${encodeURIComponent(selectedSession)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        const match = data.sessions?.find((s: Session) => s.id === selectedSession);
+        setOrphanSession(match || null);
+      })
+      .catch(() => setOrphanSession(null));
+  }, [selectedSession, sessions]);
 
   useEffect(() => {
     fetch("/api/projects")

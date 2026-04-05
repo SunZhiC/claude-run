@@ -9,6 +9,7 @@ import {
   getSubagentMap,
   getSubagentConversation,
   renameSession,
+  findOrphanSessions,
 } from "./storage";
 import type { ProviderAdapter, ProviderName } from "./provider-types";
 import { providerManager } from "./providers";
@@ -145,6 +146,13 @@ export function createServer(options: ServerOptions) {
     } catch {
       return c.json({ error: "Invalid request body" }, 400);
     }
+  });
+
+  app.get("/api/sessions/resolve", async (c) => {
+    const query = c.req.query("q")?.trim() ?? "";
+    if (!query) return c.json({ sessions: [] });
+    const sessions = await findOrphanSessions(query);
+    return c.json({ sessions });
   });
 
   app.get("/api/projects", async (c) => {

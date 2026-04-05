@@ -1,5 +1,5 @@
 import { readdir, readFile, writeFile, stat, open } from "fs/promises";
-import { join, basename } from "path";
+import { join, basename, dirname } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
 import { findPricing, calculateSessionCosts, type TurnUsage, type SessionCosts } from "./pricing";
@@ -869,6 +869,77 @@ export async function searchConversations(query: string): Promise<SearchResult[]
       }
     }
 
+    // Check fileIndex for orphan sessions (e.g. subagent sessions not in history.jsonl)
+    // that match the query as a session ID
+    const knownIds = new Set(sessions.map((s) => s.id));
+    for (const [sessionId, filePath] of fileIndex) {
+      if (knownIds.has(sessionId)) continue;
+      if (!matchesSessionId(sessionId, trimmedQuery)) continue;
+
+      const dirName = basename(dirname(filePath));
+      const decodedProject = dirName.startsWith("-")
+        ? "/" + dirName.slice(1).replace(/-/g, "/")
+        : dirName;
+      let timestamp = Date.now();
+      try {
+        const fileStat = await stat(filePath);
+        timestamp = fileStat.mtimeMs;
+      } catch {}
+
+      const text = `Session ID: ${sessionId}`;
+      results.push({
+        sessionId,
+        display: sessionId,
+        projectName: getProjectName(decodedProject),
+        timestamp,
+        matchCount: 1,
+        firstMatch: {
+          messageIndex: 0,
+          text,
+          snippet: createSnippet(text, trimmedQuery),
+        },
+      });
+    }
+
     return results.sort((a, b) => b.timestamp - a.timestamp);
   });
+}
+
+/** Find orphan sessions (on disk but not in history.jsonl) matching a session ID query */
+export async function findOrphanSessions(query: string): Promise<Session[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const sessions = await getSessions();
+  const knownIds = new Set(sessions.map((s) => s.id));
+  const results: Session[] = [];
+
+  for (const [sessionId, filePath] of fileIndex) {
+    if (knownIds.has(sessionId)) continue;
+    if (!matchesSessionId(sessionId, trimmed)) continue;
+
+    const dirName = basename(dirname(filePath));
+    const decodedProject = dirName.startsWith("-")
+      ? "/" + dirName.slice(1).replace(/-/g, "/")
+      : dirName;
+    let timestamp = Date.now();
+    try {
+      const fileStat = await stat(filePath);
+      timestamp = fileStat.mtimeMs;
+    } catch {}
+    const { count: messageCount, model } = await countSessionMessages(sessionId);
+
+    results.push({
+      id: sessionId,
+      display: sessionId,
+      timestamp,
+      project: decodedProject,
+      projectName: getProjectName(decodedProject),
+      messageCount,
+      model,
+      provider: "claude" as const,
+    });
+  }
+
+  return results.sort((a, b) => b.timestamp - a.timestamp);
 }
